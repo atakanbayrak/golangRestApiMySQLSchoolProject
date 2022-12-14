@@ -1,12 +1,14 @@
 package main
 
 import (
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
+	_ "github.com/go-sql-driver/mysql"
 )
 
 var students = []Student{
@@ -41,12 +43,48 @@ func createStudent(context *gin.Context) {
 
 	if err == nil && studentByUser.Id != 0 && studentByUser.Class != "" && studentByUser.Name != "" && studentByUser.Teacher != "" {
 		students = append(students, studentByUser)
+		addStudentOnDatabase(&studentByUser)
 		context.IndentedJSON(http.StatusCreated, gin.H{"message": "Student has been created", "student_id": studentByUser.Id})
 		return
 	} else {
 		context.IndentedJSON(http.StatusBadRequest, gin.H{"message": "Student has not been created"})
 		return
 	}
+}
+
+func addStudentOnDatabase(studentByUser *Student) {
+
+	db, err := sql.Open("mysql", "root:12345@tcp(localhost:3306)/studentApi")
+
+	if err != nil {
+		fmt.Println("Error validating sql.Open arguments")
+		panic(err.Error())
+	}
+
+	err = db.Ping()
+	if err != nil {
+		fmt.Println("Error verifying connection with db.Ping")
+	}
+
+	insert, err := db.Prepare("INSERT INTO `studentApi`.`student` (`student_id`,`student_name`,`student_class`,`student_teacher`) VALUES (?,?,?,?); ")
+	if err != nil {
+		panic(err.Error())
+	}
+	defer insert.Close()
+	res, err := insert.Exec(studentByUser.Id, studentByUser.Name, studentByUser.Class, studentByUser.Teacher)
+
+	rowsAffec, _ := res.RowsAffected()
+	if err != nil || rowsAffec != 1 {
+		fmt.Println("Error inserting row:", err)
+		return
+	}
+
+	lastInserted, _ := res.LastInsertId()
+	rowsAffected, _ := res.RowsAffected()
+	fmt.Println("ID of last row inserted:", lastInserted)
+	fmt.Println("number of rows affected:", rowsAffected)
+
+	fmt.Println("Successful Connection to Database!")
 }
 
 func getStudentByID(int_id int) (*Student, error) {
@@ -76,10 +114,12 @@ func getStudent(context *gin.Context) {
 
 }
 func main() {
+
 	router := gin.Default()
 	router.GET("/students", listStudents)
 	router.POST("/students", createStudent)
 	router.GET("/studentById", listStudentsById)
 	router.GET("/students/:id", getStudent)
 	router.Run("localhost:9090")
+
 }
